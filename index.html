@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>שפתיים סגורות</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700&family=Secular+One&display=swap">
+<style>
+/* Layout: single column instrument panel — live meter on top, controls, then settings */
+:root{
+  --bg:#f3f5f4; --surface:#ffffff; --fg:#17201d; --muted:#5d6b66; --line:#d8dfdc;
+  --accent:#0f7a63; --accent-ink:#ffffff; --ok:#1d8a4e; --warn:#c2780a; --bad:#c23b2b;
+  --display:"Secular One","Assistant",system-ui,sans-serif;
+  --body:"Assistant",system-ui,"Segoe UI",Arial,sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0f1513; --surface:#18211e; --fg:#e7eeeb; --muted:#97a6a0; --line:#2b3733;
+  --accent:#3fc3a0; --accent-ink:#06231b; --ok:#4cc27e; --warn:#e6a23c; --bad:#ef6b5a; color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--fg);font:16px/1.5 var(--body);
+  padding-block:max(16px,env(safe-area-inset-top)) max(24px,env(safe-area-inset-bottom));padding-inline:16px}
+main{max-width:640px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+h1{font:28px/1.2 var(--display);margin:0;text-wrap:balance}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.pill{font-weight:700;font-size:14px;padding:4px 12px;border-radius:99px;background:var(--line);color:var(--fg)}
+.pill.ok{background:var(--ok);color:#fff}.pill.warn{background:var(--warn);color:#111}.pill.bad{background:var(--bad);color:#fff}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:12px}
+.stage{position:relative;border-radius:10px;overflow:hidden;background:#000;aspect-ratio:4/3;max-width:100%}
+video,canvas.ov{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.mirror{transform:scaleX(-1)}
+.stage .empty{position:absolute;inset:0;display:grid;place-items:center;color:#cfd8d4;text-align:center;padding:16px}
+.big{font:22px/1.3 var(--display)}
+.meter{position:relative;height:22px;border-radius:6px;background:var(--line);overflow:hidden;direction:ltr}
+.meter .fill{position:absolute;inset:0 auto 0 0;width:0;background:var(--accent);transition:width .08s linear}
+.meter .th{position:absolute;top:-2px;bottom:-2px;width:3px;background:var(--bad)}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.progress{height:8px;border-radius:4px;background:var(--line);overflow:hidden;direction:ltr}
+.progress div{height:100%;width:0;background:var(--warn)}
+button{font:700 17px var(--body);padding:12px 18px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--fg);cursor:pointer;min-height:48px}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+button:disabled{opacity:.5;cursor:default}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center}
+.stats b{display:block;font:24px var(--display);font-variant-numeric:tabular-nums}
+.stats span{font-size:13px;color:var(--muted)}
+details summary{font-weight:700;cursor:pointer;font-size:17px}
+.field{display:flex;flex-direction:column;gap:4px}
+.field label{font-weight:600}
+.hint{font-size:13px;color:var(--muted)}
+input[type=number],input[type=text],select{font:16px var(--body);padding:10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);width:100%}
+input[type=range]{width:100%}
+.check{display:flex;gap:8px;align-items:center}
+.check input{width:22px;height:22px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:440px){.grid2{grid-template-columns:1fr}}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.num{font-variant-numeric:tabular-nums;direction:ltr;display:inline-block}
+@media (prefers-reduced-motion:reduce){.meter .fill{transition:none}}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>שפתיים סגורות</h1>
+    <span id="pill" class="pill">כבוי</span>
+  </header>
+
+  <section class="panel" aria-label="תצוגה חיה">
+    <div class="stage">
+      <video id="video" playsinline muted></video>
+      <canvas id="ov" class="ov"></canvas>
+      <div id="empty" class="empty">לחצו על "הפעלה" כדי להדליק את המצלמה</div>
+    </div>
+    <div id="state" class="big" aria-live="polite">מוכן</div>
+    <div>
+      <div class="row" style="justify-content:space-between"><span>פתיחת שפתיים</span><span class="num" id="val">–</span></div>
+      <div class="meter" aria-hidden="true"><div class="fill" id="fill"></div><div class="th" id="thMark"></div></div>
+    </div>
+    <div>
+      <div class="row" style="justify-content:space-between"><span>זמן רצוף עם פה פתוח</span><span class="num" id="openT">0:00</span></div>
+      <div class="progress" aria-hidden="true"><div id="prog"></div></div>
+    </div>
+    <div class="row">
+      <button id="startBtn" class="primary">הפעלה</button>
+      <button id="calBtn" disabled>כיול קולי</button>
+      <button id="testBtn">בדיקת התראה</button>
+    </div>
+  </section>
+
+  <section class="panel" aria-label="סיכום">
+    <div class="stats">
+      <div><b id="sAlerts">0</b><span>התראות</span></div>
+      <div><b id="sOpen">0:00</b><span>סה״כ פה פתוח</span></div>
+      <div><b id="sLong">0:00</b><span>הרצף הארוך</span></div>
+    </div>
+  </section>
+
+  <section class="panel" aria-labelledby="pushH">
+    <h2 id="pushH" style="font:20px/1.3 var(--display);margin:0">התראות לאייפון של עתי</h2>
+    <label class="check"><input type="checkbox" id="push"> לשלוח התראות לטלפון</label>
+    <label class="check"><input type="checkbox" id="pushGood"> לשלוח משוב חיובי כשהוא סוגר את הפה אחרי התראה</label>
+    <div class="field"><label for="goodMsg">המשפט של המשוב החיובי</label><input type="text" id="goodMsg"></div>
+    <label class="check"><input type="checkbox" id="pushFace"> להודיע לטלפון כשהמצלמה לא רואה אותו יותר משתי דקות</label>
+    <div class="field">
+      <label for="topic">שם הערוץ ב-ntfy</label>
+      <div class="row" style="flex-wrap:nowrap">
+        <input type="text" id="topic" dir="ltr" autocomplete="off" spellcheck="false" style="min-width:0">
+        <button id="copyTopic" type="button">העתקה</button>
+      </div>
+      <span class="hint">באייפון: מתקינים את ntfy מה-App Store, לוחצים + ומקלידים בדיוק את השם הזה. מי שיודע את השם יכול לקבל את ההתראות, לכן כדאי להשאיר אותו אקראי.</span>
+    </div>
+    <div class="row">
+      <button id="pushTest" type="button">שליחת בדיקה לטלפון</button>
+      <button id="copyLink" type="button">העתקת קישור לכל טלפון</button>
+      <span id="pushStatus" class="hint" aria-live="polite"></span>
+    </div>
+  </section>
+
+  <section class="panel">
+    <details>
+      <summary>הגדרות</summary>
+      <div style="display:flex;flex-direction:column;gap:14px;margin-top:12px">
+        <div class="field">
+          <label for="cam">מצלמה</label>
+          <select id="cam"><option value="environment">אחורית (מומלץ, המכשיר מול עתי)</option><option value="user">קדמית</option></select>
+        </div>
+        <div class="field">
+          <label for="th">סף "פה פתוח": <span class="num" id="thVal"></span></label>
+          <input type="range" id="th" min="0.01" max="0.30" step="0.005">
+          <span class="hint">הקו האדום במד. הכיול הקולי קובע אותו אוטומטית.</span>
+        </div>
+        <div class="grid2">
+          <div class="field"><label for="alertMin">התראה אחרי (דקות)</label><input type="number" id="alertMin" min="0.1" step="0.1"></div>
+          <div class="field"><label for="repeatSec">חזרה על ההתראה כל (שניות)</label><input type="number" id="repeatSec" min="5" step="5"></div>
+          <div class="field"><label for="graceSec">סגירה קצרה שלא מאפסת (שניות)</label><input type="number" id="graceSec" min="0" step="0.5"></div>
+        </div>
+        <div class="field"><label for="msg">המשפט הקולי בהתראה</label><input type="text" id="msg"></div>
+        <label class="check"><input type="checkbox" id="talk"> לא לספור בזמן דיבור</label>
+        <div class="field">
+          <span style="font-weight:700">צלילים במכשיר המצלמה עצמו</span>
+          <span class="hint">כבויים כברירת מחדל, כי המשוב מגיע לטלפון של עתי. שימושי בעיקר בזמן בדיקות.</span>
+        </div>
+        <label class="check"><input type="checkbox" id="voice"> הקראה קולית</label>
+        <label class="check"><input type="checkbox" id="tone"> צליל עדין</label>
+        <label class="check"><input type="checkbox" id="vib"> רטט (באנדרואיד)</label>
+        <label class="check"><input type="checkbox" id="faceCue"> להגיד כשהפנים לא נראות</label>
+      </div>
+    </details>
+  </section>
+  <div id="live" class="sr" aria-live="assertive"></div>
+</main>
+
+<script type="module">
+import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+
+const $ = id => document.getElementById(id);
+const randTopic = () => "ati-lips-" + Array.from(crypto.getRandomValues(new Uint8Array(6)),b=>b.toString(36).padStart(2,"0")).join("").slice(0,10);
+const DEF = { th:0.06, alertMin:1, repeatSec:30, graceSec:2, msg:"עתי, לסגור את הפה", goodMsg:"כל הכבוד, הפה סגור", voice:false, tone:false, vib:false, talk:true, faceCue:false, cam:"environment", push:true, pushGood:true, pushFace:false, topic:"" };
+let S = {...DEF};
+// v2: feedback moved to the phone. Older saved settings are dropped, except the ntfy channel the phone already subscribes to.
+try {
+  const v2 = localStorage.getItem("lipsSettings2");
+  if(v2) S = {...DEF, ...JSON.parse(v2)};
+  else { const old = JSON.parse(localStorage.getItem("lipsSettings")||"{}"); S = {...DEF, topic: old.topic||"", msg: old.msg||DEF.msg}; }
+} catch {}
+const save = () => { try { localStorage.setItem("lipsSettings2", JSON.stringify(S)); } catch {} };
+// A channel in the link (?ch=...) wins, so any phone that opens Maya's link alerts Ati's iPhone with no setup.
+try { const ch = new URLSearchParams(location.search).get("ch"); if(ch && /^[A-Za-z0-9_-]{4,64}$/.test(ch)){ S.topic = ch; save(); } } catch {}
+if(!S.topic){ S.topic = randTopic(); save(); }
+
+// ---- settings UI binding
+const bind = () => {
+  $("cam").value=S.cam; $("th").value=S.th; $("alertMin").value=S.alertMin; $("repeatSec").value=S.repeatSec;
+  $("graceSec").value=S.graceSec; $("msg").value=S.msg;
+  ["voice","tone","vib","talk","faceCue","push","pushGood","pushFace"].forEach(k=>$(k).checked=S[k]);
+  $("topic").value=S.topic; $("goodMsg").value=S.goodMsg;
+  showTh();
+};
+const showTh = () => { $("thVal").textContent = Number(S.th).toFixed(3); $("thMark").style.left = Math.min(100,S.th/0.4*100)+"%"; };
+$("th").oninput = e => { S.th=+e.target.value; showTh(); save(); };
+["alertMin","repeatSec","graceSec"].forEach(k=>$(k).onchange=e=>{ const v=+e.target.value; if(v>=0){S[k]=v;save();} });
+$("msg").onchange = e => { S.msg=e.target.value||DEF.msg; save(); };
+["voice","tone","vib","talk","faceCue","push","pushGood","pushFace"].forEach(k=>$(k).onchange=e=>{ S[k]=e.target.checked; save(); });
+$("goodMsg").onchange = e => { S.goodMsg=e.target.value||DEF.goodMsg; save(); };
+$("topic").onchange = e => { const v=e.target.value.trim().replace(/[^A-Za-z0-9_-]/g,""); S.topic=v||randTopic(); e.target.value=S.topic; save(); };
+$("copyTopic").onclick = async () => {
+  try{ await navigator.clipboard.writeText(S.topic); setPush("שם הערוץ הועתק",""); }
+  catch{ $("topic").select(); setPush("סמנו והעתיקו את שם הערוץ ידנית",""); }
+};
+$("pushTest").onclick = () => sendPush("בדיקה: ההתראות מהחיישן מגיעות לטלפון.", true);
+$("copyLink").onclick = async () => {
+  const link = location.origin + location.pathname + "?ch=" + encodeURIComponent(S.topic);
+  try{ await navigator.clipboard.writeText(link); setPush("הקישור הועתק. כל טלפון שיפתח אותו ישלח התראות לעתי.","ok"); }
+  catch{ setPush(link,""); }
+};
+$("cam").onchange = async e => { S.cam=e.target.value; save(); if(running){ await stopCam(); await startCam(); } };
+bind();
+
+// ---- audio & speech
+let actx=null;
+const tone = (freqs=[660,520], dur=0.22, vol=0.18) => {
+  if(!actx) return;
+  let t=actx.currentTime;
+  for(const f of freqs){
+    const o=actx.createOscillator(), g=actx.createGain();
+    o.type="sine"; o.frequency.value=f;
+    g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(vol,t+0.03); g.gain.exponentialRampToValueAtTime(0.001,t+dur);
+    o.connect(g).connect(actx.destination); o.start(t); o.stop(t+dur+0.02); t+=dur*0.9;
+  }
+};
+let heVoice=null;
+const pickVoice=()=>{ heVoice = speechSynthesis.getVoices().find(v=>/^he|iw/i.test(v.lang))||null; };
+if("speechSynthesis" in window){ pickVoice(); speechSynthesis.onvoiceschanged=pickVoice; }
+const say = (text) => new Promise(res=>{
+  $("live").textContent=text;
+  if(!("speechSynthesis" in window)) return res();
+  const u=new SpeechSynthesisUtterance(text); u.lang="he-IL"; if(heVoice)u.voice=heVoice; u.rate=0.95;
+  u.onend=res; u.onerror=res; speechSynthesis.cancel(); speechSynthesis.speak(u);
+  setTimeout(res, 6000);
+});
+// ---- push to Ati's iPhone via ntfy (JSON publish keeps Hebrew intact; plain string body avoids a CORS preflight)
+const setPush = (t,cls) => { const el=$("pushStatus"); el.textContent=t; el.style.color = cls==="bad"?"var(--bad)":cls==="ok"?"var(--ok)":"var(--muted)"; };
+const sendPush = async (message, force=false, priority=4) => {
+  if(!S.push && !force) return;
+  try{
+    const r = await fetch("https://ntfy.sh/", { method:"POST", body: JSON.stringify({ topic:S.topic, title:"שפתיים סגורות", message, priority }) });
+    if(!r.ok) throw new Error(r.status);
+    setPush("נשלח לטלפון ב-"+new Date().toLocaleTimeString("he-IL",{hour:"2-digit",minute:"2-digit"}),"ok");
+  }catch(e){ setPush("השליחה לטלפון נכשלה. צריך חיבור לאינטרנט.","bad"); console.error(e); }
+};
+const fireAlert = () => {
+  sendPush(S.msg);
+  if(S.tone) tone([660,520]);
+  if(S.vib && navigator.vibrate) navigator.vibrate([300,150,300]);
+  if(S.voice) setTimeout(()=>say(S.msg), S.tone?450:0);
+};
+const goodChime = () => {
+  if(S.pushGood) sendPush(S.goodMsg, false, 3);
+  if(S.tone) tone([523,659,784],0.16,0.12);
+};
+$("testBtn").onclick = () => { ensureAudio(); fireAlert(); };
+const ensureAudio = () => { if(!actx){ try{ actx=new (window.AudioContext||window.webkitAudioContext)(); }catch{} } actx?.resume?.(); };
+
+// ---- model
+let landmarker=null;
+const loadModel = async () => {
+  if(landmarker) return;
+  setState("טוען את מודל הזיהוי…","");
+  const files = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
+  const opts = { baseOptions:{ modelAssetPath:"https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task", delegate:"GPU" }, runningMode:"VIDEO", numFaces:1 };
+  try { landmarker = await FaceLandmarker.createFromOptions(files, opts); }
+  catch { opts.baseOptions.delegate="CPU"; landmarker = await FaceLandmarker.createFromOptions(files, opts); }
+};
+
+// ---- camera
+let stream=null, running=false;
+const video=$("video"), ov=$("ov"), ctx=ov.getContext("2d");
+const startCam = async () => {
+  stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ideal:S.cam}, width:{ideal:1280}, height:{ideal:960} }, audio:false });
+  video.srcObject=stream; await video.play();
+  const mirror = S.cam==="user";
+  video.classList.toggle("mirror",mirror); ov.classList.toggle("mirror",mirror);
+  $("empty").hidden=true;
+};
+const stopCam = async () => { stream?.getTracks().forEach(t=>t.stop()); stream=null; };
+
+let wake=null;
+const keepAwake = async () => { try{ wake = await navigator.wakeLock?.request("screen"); }catch{} };
+document.addEventListener("visibilitychange",()=>{ if(running && document.visibilityState==="visible") keepAwake(); });
+
+$("startBtn").onclick = async () => {
+  ensureAudio();
+  if(running){ running=false; await stopCam(); wake?.release?.(); $("startBtn").textContent="הפעלה"; $("calBtn").disabled=true; $("empty").hidden=false; setState("מושהה",""); setPill("כבוי",""); return; }
+  try{
+    $("startBtn").disabled=true;
+    await loadModel(); await startCam(); keepAwake();
+    running=true; $("startBtn").textContent="עצירה"; $("calBtn").disabled=false;
+    resetRun(); requestAnimationFrame(loop);
+    say("המעקב פועל");
+  }catch(err){
+    setState("לא הצלחתי להפעיל את המצלמה. צריך לאשר גישה למצלמה בדפדפן, ולפתוח את הקובץ ב-Chrome.","bad");
+    console.error(err);
+  }finally{ $("startBtn").disabled=false; }
+};
+
+// ---- measurement
+// lip gap = distance between inner upper lip (13) and inner lower lip (14), divided by mouth width (61–291)
+const d = (a,b) => Math.hypot(a.x-b.x, a.y-b.y);
+let latest=null; // null = no face
+const hist=[]; // recent values for talk detection
+const isTalking = () => {
+  if(hist.length<8) return false;
+  const v=hist.map(h=>h.v), m=v.reduce((a,b)=>a+b,0)/v.length;
+  const sd=Math.sqrt(v.reduce((a,b)=>a+(b-m)**2,0)/v.length);
+  return sd > Math.max(0.025, S.th*0.45);
+};
+
+// ---- run state
+let openMs=0, closedMs=0, noFaceMs=0, alerted=false, lastAlert=0, lastTs=0, lastFrame=0, lastFaceCue=-1e9, lastFacePush=-1e9;
+let stats={alerts:0,totalOpen:0,longest:0};
+const resetRun = () => { openMs=0; closedMs=0; noFaceMs=0; alerted=false; lastTs=performance.now(); };
+const fmt = ms => { const s=Math.floor(ms/1000); return Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); };
+const setState = (t,cls) => { $("state").textContent=t; $("state").style.color = cls==="bad"?"var(--bad)":cls==="warn"?"var(--warn)":cls==="ok"?"var(--ok)":"var(--fg)"; };
+const setPill = (t,cls) => { const p=$("pill"); p.textContent=t; p.className="pill "+(cls||""); };
+let lastShown="";
+
+function loop(now){
+  if(!running) return;
+  requestAnimationFrame(loop);
+  if(now-lastFrame < 66 || video.readyState<2) return; // ~15fps
+  lastFrame=now;
+  const dt = Math.min(500, now-lastTs); lastTs=now;
+
+  const res = landmarker.detectForVideo(video, now);
+  ov.width=video.videoWidth; ov.height=video.videoHeight; ctx.clearRect(0,0,ov.width,ov.height);
+  const lm = res.faceLandmarks?.[0];
+
+  if(!lm){
+    latest=null; hist.length=0; noFaceMs+=dt;
+    $("val").textContent="–"; $("fill").style.width="0";
+    if(noFaceMs>1500) show("לא רואה את הפנים","warn","אין פנים");
+    if(S.faceCue && noFaceMs>10000 && now-lastFaceCue>60000){ lastFaceCue=now; say("לא רואה את הפנים"); }
+    if(S.pushFace && S.push && noFaceMs>120000 && now-lastFacePush>600000){ lastFacePush=now; sendPush("המצלמה לא רואה את הפנים שלך. אולי צריך לזוז קצת או לכוון את המכשיר.", false, 2); }
+    return;
+  }
+  if(noFaceMs>10000 && S.faceCue) say("רואה אותך שוב");
+  noFaceMs=0;
+
+  const gap = d(lm[13],lm[14]) / Math.max(1e-6, d(lm[61],lm[291]));
+  latest=gap; hist.push({t:now,v:gap}); while(hist.length && now-hist[0].t>1500) hist.shift();
+  $("val").textContent=gap.toFixed(3); $("fill").style.width=Math.min(100,gap/0.4*100)+"%";
+
+  // draw lip points
+  ctx.fillStyle = gap>S.th ? "#ef6b5a" : "#4cc27e";
+  for(const i of [13,14,61,291,0,17]){ const p=lm[i]; ctx.beginPath(); ctx.arc(p.x*ov.width,p.y*ov.height,Math.max(3,ov.width/200),0,7); ctx.fill(); }
+
+  if(calibrating) return;
+  const talking = S.talk && isTalking();
+  const open = gap > S.th;
+
+  if(talking){ closedMs=0; show("נראה כמו דיבור – לא סופר","", "דיבור"); }
+  else if(open){
+    closedMs=0; openMs+=dt; stats.totalOpen+=dt; stats.longest=Math.max(stats.longest,openMs);
+    const lim=S.alertMin*60000;
+    if(openMs>=lim && (!alerted || Date.now()-lastAlert>=S.repeatSec*1000)){
+      alerted=true; lastAlert=Date.now(); stats.alerts++; fireAlert();
+    }
+    show(alerted?"פה פתוח – נשלחה התראה":"פה פתוח", alerted?"bad":"warn", alerted?"התראה":"פתוח");
+  } else {
+    closedMs+=dt;
+    if(closedMs>=S.graceSec*1000){
+      if(alerted) goodChime();
+      openMs=0; alerted=false;
+    }
+    show("פה סגור","ok","סגור");
+  }
+  $("openT").textContent=fmt(openMs);
+  $("prog").style.width=Math.min(100, openMs/(S.alertMin*60000)*100)+"%";
+  $("sAlerts").textContent=stats.alerts; $("sOpen").textContent=fmt(stats.totalOpen); $("sLong").textContent=fmt(stats.longest);
+}
+function show(text,cls,pill){ if(text!==lastShown){ lastShown=text; setState(text,cls); } setPill(pill,cls); }
+
+// ---- voice-guided calibration
+let calibrating=false;
+const sample = (ms) => new Promise(res=>{
+  const vals=[]; const t0=performance.now();
+  const iv=setInterval(()=>{ if(latest!=null) vals.push(latest); if(performance.now()-t0>=ms){ clearInterval(iv); vals.sort((a,b)=>a-b); res(vals.length?vals[Math.floor(vals.length/2)]:null); } },70);
+});
+$("calBtn").onclick = async () => {
+  if(calibrating||!running) return;
+  calibrating=true; $("calBtn").disabled=true; ensureAudio();
+  try{
+    setState("כיול: פה סגור","");
+    await say("מתחילים כיול. לסגור את הפה, ולנשום רגיל דרך האף.");
+    await new Promise(r=>setTimeout(r,800));
+    const closed = await sample(3500);
+    tone([600],0.15,0.12);
+    setState("כיול: פה פתוח קלות","");
+    await say("עכשיו לפתוח את הפה קצת, כמו כשנושמים דרך הפה.");
+    await new Promise(r=>setTimeout(r,800));
+    const opened = await sample(3500);
+    if(closed==null||opened==null){ await say("לא ראיתי את הפנים. צריך לכוון את המכשיר ולנסות שוב."); setState("הכיול נכשל: הפנים לא נראו","bad"); }
+    else if(opened-closed < 0.015){ await say("לא הצלחתי להבחין בין פה סגור לפתוח. כדאי לקרב את המכשיר ולנסות שוב."); setState("הכיול נכשל: אין הבדל ברור","bad"); }
+    else { S.th = +(closed + (opened-closed)*0.4).toFixed(3); save(); bind(); tone([523,659,784],0.16,0.12); await say("הכיול הושלם."); setState("הכיול הושלם","ok"); }
+  } finally { calibrating=false; $("calBtn").disabled=false; resetRun(); lastShown=""; }
+};
+</script>
+</body>
+</html>
